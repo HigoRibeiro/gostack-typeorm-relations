@@ -7,18 +7,24 @@ import ICustomersRepository from '@modules/customers/repositories/ICustomersRepo
 import Order from '../infra/typeorm/entities/Order';
 import IOrdersRepository from '../repositories/IOrdersRepository';
 
-interface IProduct {
+interface IProductRequest {
   id: string;
   quantity: number;
 }
 
 interface IRequest {
   customer_id: string;
-  products: IProduct[];
+  products: IProductRequest[];
 }
 
-interface IProductObj {
-  [key: string]: { product_id: string; quantity: number; price: number };
+interface IProduct {
+  product_id: string;
+  quantity: number;
+  price: number;
+}
+
+interface IProductTemp {
+  [key: string]: IProduct;
 }
 
 @injectable()
@@ -37,26 +43,30 @@ class CreateOrderService {
   public async execute({ customer_id, products }: IRequest): Promise<Order> {
     const customer = await this.customersRepository.findById(customer_id);
     if (!customer) {
-      throw new AppError('Customer not exist');
+      throw new AppError('The customer does not exist');
     }
 
     const productsFetched = await this.productsRepository.findAllById(products);
 
     if (productsFetched.length !== products.length) {
-      throw new AppError('Some products item does not exist');
+      throw new AppError('Some products does not exist');
     }
 
-    const productsObj: IProductObj = {};
+    const productsObj: IProductTemp = products.reduce(
+      (obj, product) => ({
+        ...obj,
+        ...{
+          [product.id]: {
+            product_id: product.id,
+            price: 0,
+            quantity: product.quantity,
+          },
+        },
+      }),
+      {},
+    );
 
-    products.forEach(item => {
-      productsObj[item.id] = {
-        product_id: item.id,
-        price: 0,
-        quantity: item.quantity,
-      };
-    });
-
-    const productagoravai = productsFetched.map(item => {
+    const productsPurchased = productsFetched.map(item => {
       const prod = productsObj[item.id];
       prod.price = item.price;
 
@@ -71,7 +81,7 @@ class CreateOrderService {
 
     const order = await this.ordersRepository.create({
       customer,
-      products: productagoravai,
+      products: productsPurchased,
     });
 
     await this.productsRepository.updateQuantity(products);
